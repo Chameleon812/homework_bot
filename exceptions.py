@@ -1,10 +1,8 @@
 class EasyException(Exception):
+    """Не требует отправки в телеграм."""
     pass
 
 
-class ServerCodeError(Exception):
-    pass
-
-
-class SendMessageError(Exception):
+class HardException(Exception):
+    """Требует отправки в телеграм."""
     pass

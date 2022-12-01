@@ -8,7 +8,7 @@ import requests
 import telegram
 
 from dotenv import load_dotenv
-import exceptions
+from exceptions import EasyException, HardException
 
 load_dotenv()
 
@@ -49,31 +49,41 @@ def get_api_answer(current_timestamp: int) -> dict:
         if response.status_code == HTTPStatus.OK:
             return response.json()
         else:
-            raise exceptions.ServerCodeError('Сервер не отправил api')
-    except Exception as error:
-        raise exceptions.EasyException(f'Ошибка при получении api: {error}')
+            check_status_code = response.status_code
+            check_reason = response.reason
+            check_text = response.text
+            check_endpoint = response.url
+            check_headers = response.headers
+
+            raise HardException(
+                'Сервер не отправил api.Проверье параметры:'
+                f'status_code: {check_status_code}, '
+                f'reason: {check_reason}, '
+                f'text: {check_text}, '
+                f'endpoint: {check_endpoint}, '
+                f'headers: {check_headers}, '
+            )
+    except requests.RequestException:
+        'Ошибка при получении api'
 
 
-def check_response(response: object) -> list:
+def check_response(response: dict) -> list:
     """Проверка запроса."""
+    if not isinstance(response, dict):
+        raise TypeError('Запрос не является словарем')
     if response is None:
         raise ValueError('Запрос имеет неверное значение')
 
-    if not isinstance(response, dict):
-        raise TypeError('Запрос не является словарем')
-
     homeworks = response.get('homeworks')
-
-    if not homeworks:
-        raise exceptions.EasyException('Статус не изменился')
+    current_date = response.get('current_date')
 
     if not isinstance(homeworks, list):
         raise TypeError('homeworks не является списком')
 
-    if response.get('current_date') is None:
-        raise exceptions.EasyException('Сервер не прислал отсечку времени')
+    if current_date is None:
+        raise EasyException('Сервер не прислал отсечку времени')
 
-    if not isinstance(response.get('current_date'), int):
+    if not isinstance(current_date, int):
         raise TypeError('Сервер прислал неизвестный формат даты')
     return homeworks
 
@@ -84,15 +94,15 @@ def parse_status(homework: dict) -> str:
         raise KeyError('Отсутсвут ключ "homework_name"')
     if 'status' not in homework:
         raise KeyError('Отсутсвут ключ "status"')
-    else:
-        homework_name = homework.get('homework_name')
-        homework_status = homework.get('status')
 
-        if homework_status not in HOMEWORK_VERDICTS:
-            raise ValueError('Неизвестный статус проверки')
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
 
-        verdict = HOMEWORK_VERDICTS.get(homework_status)
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    if homework_status not in HOMEWORK_VERDICTS:
+        raise ValueError('Неизвестный статус проверки')
+
+    verdict = HOMEWORK_VERDICTS.get(homework_status)
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens() -> bool:
@@ -103,7 +113,7 @@ def check_tokens() -> bool:
 def main() -> None:
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = 1
+    current_timestamp = int(time.time())
 
     logging.basicConfig(
         format='%(asctime)s | %(levelname)s | %(message)s',
@@ -129,8 +139,13 @@ def main() -> None:
                 send_message(bot, message)
             current_timestamp = response.get('current_timestamp')
 
-        except exceptions.EasyException as error:
-            logger.error(f'Штатное отклонение от сценария: {error}')
+        except HardException as error:
+            message = f'Сбой в работе программы: {error}'
+            send_message(bot, message)
+            logger.error(error, exc_info=error)
+
+        except EasyException as error:
+            logger.debug(f'Штатное отклонение от сценария: {error}')
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
