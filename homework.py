@@ -1,13 +1,13 @@
+import logging
 import os
 import sys
 import time
-
 from http import HTTPStatus
-import logging
+
 import requests
 import telegram
-
 from dotenv import load_dotenv
+
 from exceptions import EasyException, HardException
 
 load_dotenv()
@@ -35,7 +35,7 @@ def send_message(bot, message: str) -> None:
         logger.info('Попытка отправки сообщения')
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except telegram.error.TelegramError:
-        logger.error('Cообщение не отправлено')
+        logger.error(f'Cообщение не отправлено: "{message}"')
     else:
         logger.debug('Сообщение отправлено')
 
@@ -64,24 +64,19 @@ def get_api_answer(current_timestamp: int) -> dict:
                 f'headers: {check_headers}, '
             )
     except requests.RequestException:
-        'Ошибка при получении api'
+        raise HardException('Ошибка при получении api')
 
 
 def check_response(response: dict) -> list:
     """Проверка запроса."""
     if not isinstance(response, dict):
         raise TypeError('Запрос не является словарем')
-    if response is None:
-        raise ValueError('Запрос имеет неверное значение')
 
     homeworks = response.get('homeworks')
     current_date = response.get('current_date')
 
     if not isinstance(homeworks, list):
         raise TypeError('homeworks не является списком')
-
-    if current_date is None:
-        raise EasyException('Сервер не прислал отсечку времени')
 
     if not isinstance(current_date, int):
         raise TypeError('Сервер прислал неизвестный формат даты')
@@ -95,13 +90,13 @@ def parse_status(homework: dict) -> str:
     if 'status' not in homework:
         raise KeyError('Отсутсвут ключ "status"')
 
-    homework_name = homework.get('homework_name')
-    homework_status = homework.get('status')
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
 
     if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError('Неизвестный статус проверки')
 
-    verdict = HOMEWORK_VERDICTS.get(homework_status)
+    verdict = HOMEWORK_VERDICTS[f'{homework_status}']
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -114,6 +109,8 @@ def main() -> None:
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
+    old_status_message = ''
+    old_error_message = ''
 
     logging.basicConfig(
         format='%(asctime)s | %(levelname)s | %(message)s',
@@ -134,23 +131,25 @@ def main() -> None:
             if not homework:
                 logger.debug('Статус не изменился')
             else:
-                message = parse_status(homework[0])
-                logger.info('Статус проверки изменен')
-                send_message(bot, message)
+                status_message = parse_status(homework[0])
+                if status_message != old_status_message:
+                    logger.info('Статус проверки изменен')
+                    send_message(bot, status_message)
+                    old_status_message = status_message
+
             current_timestamp = response.get('current_timestamp')
 
-        except HardException as error:
-            message = f'Сбой в работе программы: {error}'
-            send_message(bot, message)
-            logger.error(error, exc_info=error)
 
         except EasyException as error:
-            logger.debug(f'Штатное отклонение от сценария: {error}')
+            logger.error(f'Штатное отклонение от сценария: {error}')
 
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            send_message(bot, message)
-            logger.error(error, exc_info=error)
+            error_message = f'Сбой в работе программы: {error}'
+            if error_message != old_error_message:
+                logger.error(error, exc_info=error)
+                send_message(bot, error_message)
+                old_error_message = error_message
+
 
         finally:
             time.sleep(RETRY_PERIOD)
