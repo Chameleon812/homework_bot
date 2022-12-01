@@ -139,7 +139,6 @@ def main() -> None:
 
             current_timestamp = response.get('current_timestamp')
 
-
         except EasyException as error:
             logger.error(f'Штатное отклонение от сценария: {error}')
 
@@ -149,7 +148,6 @@ def main() -> None:
                 logger.error(error, exc_info=error)
                 send_message(bot, error_message)
                 old_error_message = error_message
-
 
         finally:
             time.sleep(RETRY_PERIOD)
