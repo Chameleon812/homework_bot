@@ -144,8 +144,8 @@ def main() -> None:
 
         except Exception as error:
             error_message = f'Сбой в работе программы: {error}'
+            logger.error(error, exc_info=error)
             if error_message != old_error_message:
-                logger.error(error, exc_info=error)
                 send_message(bot, error_message)
                 old_error_message = error_message
 
